@@ -1,82 +1,129 @@
-# 🌿 Aplua
+# 🌿 Aplua Engine
 
-> **Uma engine de jogos 2D minimalista baseada em Nós (Nodes), escrita em Lua e inspirada na hierarquia e simplicidade da Godot.**
+Uma engine 2D ágil e moderna em Lua construída sobre o **LÖVE2D**, unindo a **elegância composicional da Godot** à **velocidade de prototipagem do GameMaker**.
 
 ---
 
 ## 🎯 Visão do Projeto
 
-O **Aplua** nasce com o objetivo de unir a leveza e dinamismo do **Lua** à elegância arquitetural da **Godot**. 
+O desenvolvimento de jogos 2D muitas vezes oscila entre dois extremos:
+1. **Engines orientadas a nós rígidos**, onde até as tarefas mais simples exigem nós filhos dedicados e boilerplate de classes.
+2. **Frameworks soltos**, onde o desenvolvedor precisa recriar loops de jogo, câmeras, ordenação de profundidade e transformações espaciais do zero.
 
-Em vez de lidar com loops manuais e renderização de baixo nível, o desenvolvedor estrutura seu jogo como uma **Árvore de Nós** (*Scene Tree*). Futuramente, o projeto pretende evoluir para incluir ferramentas visuais como **Editor de Cenas (Drag & Drop)** e inspetor de propriedades.
-
----
-
-## 🏛️ Arquitetura
-
-Para manter o desenvolvimento ágil, moderno e sem a sobrecarga de gerenciar drivers de vídeo em C/C++, a engine adota uma divisão clara de responsabilidades:
-
-* **Runtime de Baixo Nível (LÖVE2D):** Gerencia a criação da janela, contexto gráfico OpenGL, áudio e captura de eventos de teclado/mouse.
-* **Aplua Framework (O Cérebro da Engine):** Camada de alto nível que implementa:
-  * Sistema de Nós e hierarquia pai/filho.
-  * Ciclo de vida dos objetos (`_ready`, `_process`, `_draw`).
-  * Herança de transformação espacial 2D (coordenadas locais vs globais).
-  * Nós especializados (`AnimatedSprite2D`, `Camera2D`, etc.).
-  * Sistema de Sinais (*Signals/Events*).
-  * Gerenciamento de Cenas e Recursos.
+O **Aplua** resolve isso com uma **arquitetura híbrida**:
+* **A Estrutura da Godot:** Uma Árvore de Cenas (Scene Tree) onde nós herdam posição, rotação e escala de seus nós pais, com suporte a sinais desacoplados e cenas reutilizáveis.
+* **A Praticidade do GameMaker:** Ciclos de vida com renderização de HUD separada (`_draw` vs `_draw_gui`), variáveis de cinemática rápida (`speed`, `direction`, `friction`), sistema embutido de **Alarmes** e nós com persistência entre transições de telas (`persistent = true`).
 
 ---
 
-## 🌳 O Sistema de Nós (*Scene Tree*)
-
-Na Aplua, **tudo no jogo é um Nó (`Node`)**. 
+## 🏛️ Arquitetura do Sistema
 
 ```text
-CenaRaiz (Scene)
- └── Player (Node2D, posição: 100, 100)
-      ├── Sprite (AnimatedSprite2D)
-      ├── Camera (Camera2D)
-      └── Arma (Node2D, posição relativa: 15, 0)
-           └── PontaDoCano (pos relativa: 10, 0)
+┌────────────────────────────────────────────────────────┐
+│                   Aplua Framework                      │
+│                                                        │
+│  [Scene Tree & Hierarquia]     [Atores & Entidades]    │
+│  • Transformações Pai/Filho    • Cinemática (hspeed)   │
+│  • Sinais (Event-Driven)       • Sistema de Alarmes    │
+│  • Z-Ordering / Camadas        • Instâncias Persistentes│
+│                                                        │
+│  [Pipeline Gráfico Híbrido]    [Gerenciamento Cenas]   │
+│  • Camera2D (World Space)      • Cenas como "Rooms"    │
+│  • _draw() vs _draw_gui()      • Transição e Cache     │
+└───────────────────────────┬────────────────────────────┘
+                            │
+┌───────────────────────────▼────────────────────────────┐
+│               Runtime de Baixo Nível (LÖVE2D)          │
+│  Janela, Contexto OpenGL, Áudio, I/O e Loop Principal  │
+└────────────────────────────────────────────────────────┘
+
 ```
 
-### Ciclo de Vida:
-* **`_ready()`:** Executado uma única vez quando o nó entra na árvore.
-* **`_process(dt)`:** Executado a cada frame para lógica e física (`dt` = delta time).
-* **`_draw()`:** Executado a cada frame para renderizar gráficos na tela.
+---
+
+## 🌳 O Sistema de Nós (Scene Tree Híbrida)
+
+Na Aplua, qualquer elemento da cena é derivado de `Node`. Nós espaciais derivam de `Node2D`, e entidades dinâmicas utilizam a classe especializada `Actor2D` (uma fusão do *Object* do GameMaker com a hierarquia da Godot):
+
+```text
+Room_Fase1 (Scene / Node2D)
+ ├── Background (TileLayer / Sprite2D)
+ ├── Player (Actor2D) ── [Tem speed, alarmes e colisão nativos]
+ │    ├── Gun (Node2D, posição relativa: 12, 4)
+ │    │    └── Muzzle (Node2D, pos relativa: 8, 0)
+ │    └── Camera (Camera2D) ── [Segue o jogador automaticamente]
+ └── Inimigo (Actor2D)
+
+```
+
+### Ciclo de Vida dos Objetos
+
+* `_ready()`: Executado uma única vez quando o nó entra na árvore ativa (*Create Event*).
+* `_process(dt)`: Executado a cada frame para lógica e cinemática (*Step Event*).
+* `_draw()`: Renderizado no espaço de mundo, afetado pela `Camera2D` (*Draw Event*).
+* `_draw_gui()`: Renderizado diretamente na tela/viewport fixa para HUD/UI (*Draw GUI Event*).
+* `_alarm(id)`: Disparado quando um temporizador interno do objeto expira (*Alarm Event*).
+* `_destroy()`: Executado ao remover o nó da cena (*Destroy / CleanUp Event*).
 
 ---
 
 ## 💻 Exemplo de Código Alvo
 
-A ideia é que programar na Aplua seja tão simples e intuitivo quanto na Godot:
-
 ```lua
-local Node2D = require("aplua.nodes.node_2d")
+local Actor2D = require("aplua.nodes.actor_2d")
 local AnimatedSprite2D = require("aplua.nodes.animated_sprite_2d")
 
-local Player = setmetatable({}, { __index = Node2D })
+local Player = setmetatable({}, { __index = Actor2D })
 Player.__index = Player
 
 function Player.new()
-    local self = setmetatable(Node2D.new("Player"), Player)
+    local self = setmetatable(Actor2D.new("Player"), Player)
     
-    -- Criação de um sprite animado com folha de sprites
-    self.sprite = AnimatedSprite2D.new("assets/player_sheet.png", 32, 32)
+    -- Visual via Nó Filho
+    self.sprite = AnimatedSprite2D.new("assets/hero.png", 32, 32)
     self.sprite:add_animation("run", {1, 2, 3, 4}, 0.1, true)
     self.sprite:play("run")
-    
     self:add_child(self.sprite)
+
+    -- Alarme estilo GameMaker (sem criar nós extras de Timer)
+    self.can_dash = true
+    self:set_alarm(0, 2.0, function()
+        self.can_dash = true
+    end, false)
+
     return self
 end
 
 function Player:_process(dt)
-    if aplua.input.is_down("right") then
-        self.x = self.x + 150 * dt
+    -- Controles estilo Godot
+    local move_x = 0
+    if aplua.input.is_down("right") then move_x = move_x + 1 end
+    if aplua.input.is_down("left")  then move_x = move_x - 1 end
+
+    -- Movimentação rápida estilo GameMaker
+    self.hspeed = move_x * 160
+
+    if aplua.input.is_just_pressed("dash") and self.can_dash then
+        self.hspeed = self.hspeed * 3
+        self.can_dash = false
+        self:start_alarm(0)
+    end
+end
+
+-- Espaço de mundo (afetado pelo zoom e posição da Camera2D)
+function Player:_draw()
+    -- Renderizações contextuais no mundo (ex: sombras, miras)
+end
+
+-- Espaço de tela (HUD fixo)
+function Player:_draw_gui()
+    if not self.can_dash then
+        love.graphics.print("Dash em Recarga...", 20, 20)
     end
 end
 
 return Player
+
 ```
 
 ---
@@ -85,56 +132,67 @@ return Player
 
 ```text
 aplua/
-├── .devcontainer/                # Ambiente Plug & Play (Codespaces com Desktop Web)
+├── .devcontainer/                # Ambiente Codespaces (LÖVE2D + Desktop Web)
 │   └── devcontainer.json
 │
 ├── aplua/                        # 🌿 CÓDIGO DA ENGINE
-│   ├── init.lua                  # Ponto de entrada da engine
-│   ├── core/                     # Núcleo essencial
-│   │   ├── object.lua            # Herança e classes em Lua
-│   │   ├── node.lua              # O Nó base (hierarquia e ciclo de vida)
-│   │   ├── node_2d.lua           # Nó espacial com posição, rotação e escala
-│   │   └── scene_tree.lua        # Gerenciador da árvore de cenas e Game Loop
-│   ├── nodes/                    # Nós visuais e de utilidade
-│   │   ├── sprite_2d.lua         # Sprites estáticos
-│   │   ├── animated_sprite_2d.lua# Animação por SpriteSheet
-│   │   └── camera_2d.lua         # Câmera 2D com zoom e interpolação (lerp)
-│   └── math/                     # Utilitários matemáticos
-│       └── vector2.lua           # Vetores 2D e transformações
+│   ├── init.lua                  # Ponto de entrada global (aplua.*)
+│   │
+│   ├── core/                     # Núcleo Arquitetural
+│   │   ├── object.lua            # Herança e metatabelas
+│   │   ├── node.lua              # O Nó fundamental (árvore, hierarquia e ciclo de vida)
+│   │   ├── node_2d.lua           # Nó espacial 2D (coordenadas locais/globais e rotação)
+│   │   ├── scene_tree.lua        # Loop principal (integração com love.update/draw/draw_gui)
+│   │   ├── signals.lua           # Sistema desacoplado de eventos (Observer)
+│   │   └── alarms.lua            # Gerenciador de temporizadores leves
+│   │
+│   ├── nodes/                    # Biblioteca de Nós Especializados
+│   │   ├── actor_2d.lua          # Nó com cinemática GM (hspeed, vspeed, speed, alarms)
+│   │   ├── sprite_2d.lua         # Texturas estáticas com controle de pivô/origem
+│   │   ├── animated_sprite_2d.lua# Animação de spritesheets com tags de ação
+│   │   ├── camera_2d.lua         # Câmera com interpolação suave (lerp) e limites
+│   │   └── canvas_layer.lua      # Camadas de renderização ordenadas por Z-index
+│   │
+│   ├── systems/                  # Subsistemas do Runtime
+│   │   ├── input.lua             # Mapeamento de botões e ações virtuais
+│   │   ├── scenes.lua            # Carregador e trocador de Cenas/Salas com persistência
+│   │   └── physics2d.lua         # Detecção simples de colisão (AABB e máscaras)
+│   │
+│   └── math/                     # Utilitários Matemáticos
+│       └── vector2.lua           # Vetores 2D, ângulos e interpolações
 │
-├── sandbox/                      # 🎮 AMBIENTE DE TESTE / JOGO EXEMPLO
-│   ├── assets/                   # Texturas, fontes e sons
-│   └── scenes/                   # Cenas de teste
-│       └── main_scene.lua
+├── sandbox/                      # 🎮 PROJETO DE TESTE / EXEMPLO
+│   ├── assets/
+│   └── scenes/
+│       └── main_room.lua
 │
-├── conf.lua                      # Configurações de janela do LÖVE
-├── main.lua                      # Bootstrap que liga o LÖVE à Aplua
+├── conf.lua                      # Configurações do LÖVE2D
+├── main.lua                      # Bootstrap que inicializa a SceneTree
 └── README.md
+
 ```
 
 ---
 
 ## 🗺️ Roteiro de Desenvolvimento (Roadmap)
 
-- [x] **Fase 0: Concepção e Arquitetura**
-  - Definição do escopo, filosofia e design de nós.
-- [ ] **Fase 1: Ambiente e Núcleo (Core)**
-  - Configuração do Dev Container (LÖVE2D + Desktop Web no Codespaces).
-  - Implementação da classe `Object` e metatabelas.
-  - Implementação de `Node` (árvore, hierarquia, ciclo de vida).
-  - Implementação de `Node2D` (transformações globais relativas).
-  - `SceneTree` e integração com o loop principal (`love.update`, `love.draw`).
-- [ ] **Fase 2: Gráficos e Mídia**
-  - Implementação de `Sprite2D` e gerenciador de texturas.
-  - Implementação de `AnimatedSprite2D` (corte automático de folhas de sprites).
-  - Implementação de `Camera2D` (seguimento suave e zoom).
-- [ ] **Fase 3: Entradas e Comunicação**
-  - Sistema de `Input` simplificado (`is_action_just_pressed`).
-  - Sistema de Sinais (*Signals* / Eventos desacoplados).
-- [ ] **Fase 4: Serialização de Cenas**
-  - Formato de arquivo de cena (`.scene` em Lua/JSON).
-  - Carregador dinâmico de cenas.
-- [ ] **Fase 5: Ferramentas e Editor Visual**
-  - Interface do editor (Canvas 2D interativo).
-  - Sistema de arrastar e soltar (Drag & Drop) de nós na cena.
-  - Painel de propriedades (Inspetor).
+* [x] **Fase 0: Concepção e Arquitetura Híbrida**
+  - Definição do escopo combinando Scene Tree (Godot) com Cinemática/Alarmes/GUI (GameMaker).
+* [ ] **Fase 1: Núcleo e Hierarquia (Core)**
+  - Configuração do Dev Container (LÖVE2D + Desktop Web).
+  - Implementação de `Object`, `Node` e `Node2D` (árvore e matrizes de transformação relativa).
+  - Implementação da `SceneTree` com suporte aos dois passos de renderização (`_draw` e `_draw_gui`).
+* [ ] **Fase 2: O Nó Ator e Gráficos**
+  - Criação do `Actor2D` (`hspeed`, `vspeed`, `friction`, `alarm`).
+  - Implementação de `Sprite2D` e `AnimatedSprite2D`.
+  - Criação da `Camera2D` (seguimento suave e separação de matrizes tela/mundo).
+* [ ] **Fase 3: Entradas, Sinais e Colisões**
+  - Sistema de Input unificado (`is_action_pressed`, `is_action_just_pressed`).
+  - Sistema de Sinais desacoplados (`connect`, `emit`).
+  - Colisões 2D diretas com detecção AABB e callback `_on_collision(other)`.
+* [ ] **Fase 4: Gestão de Salas e Persistência**
+  - Sistema de transição de salas mantendo nós com `persistent = true`.
+  - Serialização e carregamento de cenas em formato tabular Lua.
+* [ ] **Fase 5: Ferramentas e Editor Visual**
+  - Canvas interativo para posicionamento de nós via Drag & Drop.
+  - Inspetor de propriedades e navegador de árvore de nós.
