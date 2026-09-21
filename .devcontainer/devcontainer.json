@@ -1,0 +1,35 @@
+{
+    "name": "Aplua Engine Dev Environment",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+    "features": {
+        "ghcr.io/devcontainers/features/desktop-lite:1": {
+            "password": "aplua"
+        }
+    },
+    "forwardPorts": [6080],
+    "portsAttributes": {
+        "6080": {
+            "label": "Desktop Web (noVNC)",
+            "onAutoForward": "openBrowser"
+        }
+    },
+    "postCreateCommand": "sudo add-apt-repository -y ppa:bartbes/love-stable && sudo apt-get update && sudo apt-get install -y love luajit luarocks",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "sumneko.lua"
+            ],
+            "settings": {
+                "Lua.runtime.version": "LuaJIT",
+                "Lua.workspace.checkThirdParty": false,
+                "Lua.diagnostics.globals": [
+                    "love",
+                    "aplua"
+                ],
+                "terminal.integrated.env.linux": {
+                    "DISPLAY": ":1"
+                }
+            }
+        }
+    }
+}
